@@ -120,6 +120,87 @@ struct SessionStateTests {
         #expect(decoded.sessionId == session.sessionId)
         #expect(decoded.state == session.state)
     }
+
+    @Test @MainActor func sessionCodableWithWarpFocusURL() throws {
+        let session = ClaudeSession(
+            sessionId: "12345678-1234-1234-1234-123456789abc",
+            pid: 12345,
+            workingDirectory: "/Users/test/Project",
+            projectName: "Project",
+            state: .waiting,
+            lastActivityAt: Date(),
+            iTermSessionId: nil,
+            tmuxPaneId: nil,
+            tmuxSocket: nil,
+            source: .terminal(app: "Warp"),
+            activity: "",
+            sessionName: nil,
+            warpFocusURL: URL(string: "warp://session/a951174709ef4434ad5d8d1816944f8d")
+        )
+
+        let encoded = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(ClaudeSession.self, from: encoded)
+
+        #expect(decoded.warpFocusURL == session.warpFocusURL)
+    }
+
+    @Test @MainActor func sessionDecodesWithoutWarpFocusURL() throws {
+        // Data written before Warp focus support has no warpFocusURL key.
+        let session = ClaudeSession(
+            sessionId: "12345678-1234-1234-1234-123456789abc",
+            pid: 12345,
+            workingDirectory: "/Users/test/Project",
+            projectName: "Project",
+            state: .idle,
+            lastActivityAt: Date(),
+            iTermSessionId: nil,
+            tmuxPaneId: nil,
+            tmuxSocket: nil,
+            source: .terminal(app: "Terminal"),
+            activity: "",
+            sessionName: nil
+        )
+
+        let encoded = try JSONEncoder().encode(session)
+        var json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json.removeValue(forKey: "warpFocusURL")
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(ClaudeSession.self, from: legacy)
+
+        #expect(decoded.warpFocusURL == nil)
+        #expect(decoded.sessionId == session.sessionId)
+    }
+}
+
+struct WarpFocusURLTests {
+
+    @Test func acceptsWarpSessionURL() {
+        let url = ClaudeSession.warpFocusURL(from: "warp://session/a951174709ef4434ad5d8d1816944f8d")
+        #expect(url?.absoluteString == "warp://session/a951174709ef4434ad5d8d1816944f8d")
+    }
+
+    @Test func acceptsHyphenatedUUID() {
+        let url = ClaudeSession.warpFocusURL(from: "warp://session/12345678-1234-1234-1234-123456789ABC")
+        #expect(url != nil)
+    }
+
+    @Test func rejectsMissingOrEmptyValue() {
+        #expect(ClaudeSession.warpFocusURL(from: nil) == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "") == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "warp://session/") == nil)
+    }
+
+    @Test func rejectsOtherSchemesAndHosts() {
+        #expect(ClaudeSession.warpFocusURL(from: "https://session/abc123") == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "file:///Applications/Calculator.app") == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "warp://action/new_tab?path=/tmp") == nil)
+    }
+
+    @Test func rejectsUnexpectedCharactersInId() {
+        #expect(ClaudeSession.warpFocusURL(from: "warp://session/abc/def") == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "warp://session/abc?x=1") == nil)
+        #expect(ClaudeSession.warpFocusURL(from: "warp://session/abc%20def") == nil)
+    }
 }
 
 struct SessionDiscoveryTests {

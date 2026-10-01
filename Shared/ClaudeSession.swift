@@ -129,6 +129,10 @@ struct ClaudeSession: Identifiable, Codable, Equatable {
     /// Display name of the Claude Code profile (config dir) this session belongs to.
     /// Nil for data written before profile support.
     var profileName: String? = nil
+    /// Warp deep link that focuses the exact tab hosting this session
+    /// (from the WARP_FOCUS_URL env var, e.g. "warp://session/<uuid>").
+    /// Nil outside Warp or on Warp versions that don't set it.
+    var warpFocusURL: URL? = nil
 
     /// Use sessionId as the SwiftUI identity (stable, unlike PIDs).
     var id: String { sessionId }
@@ -154,6 +158,23 @@ struct ClaudeSession: Identifiable, Codable, Equatable {
         components.host = "session"
         components.path = "/\(id)"
         return components.url ?? URL(string: "claude-status://session/unknown")!
+    }
+
+    /// Validates a raw WARP_FOCUS_URL value read from a process environment.
+    /// Only `warp://session/<id>` is accepted, so an arbitrary URL found in
+    /// the environment is never handed to `NSWorkspace.open`.
+    static func warpFocusURL(from raw: String?) -> URL? {
+        guard let raw, let url = URL(string: raw),
+              url.scheme == "warp", url.host == "session",
+              url.query == nil, url.fragment == nil else {
+            return nil
+        }
+        let id = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+        guard !id.isEmpty,
+              id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else {
+            return nil
+        }
+        return url
     }
 }
 

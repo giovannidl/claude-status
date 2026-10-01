@@ -185,8 +185,12 @@ struct SessionDiscovery {
         let iTermSessionId: String?
         let tmuxPaneId: String?
         let tmuxSocket: String?
+        let warpFocusURL: URL?
         if source.isTerminal {
             iTermSessionId = readEnvironmentVariable(for: record.pid, name: "ITERM_SESSION_ID")
+            warpFocusURL = ClaudeSession.warpFocusURL(
+                from: readEnvironmentVariable(for: record.pid, name: "WARP_FOCUS_URL")
+            )
             tmuxPaneId = readEnvironmentVariable(for: record.pid, name: "TMUX_PANE")
             if let tmuxEnv = readEnvironmentVariable(for: record.pid, name: "TMUX") {
                 // TMUX env var format: /socket/path,pid,session
@@ -207,6 +211,7 @@ struct SessionDiscovery {
             iTermSessionId = nil
             tmuxPaneId = nil
             tmuxSocket = nil
+            warpFocusURL = nil
         }
 
         return ClaudeSession(
@@ -222,7 +227,8 @@ struct SessionDiscovery {
             source: source,
             activity: record.activity,
             sessionName: record.sessionName,
-            profileName: profileName
+            profileName: profileName,
+            warpFocusURL: warpFocusURL
         )
     }
 
