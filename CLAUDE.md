@@ -113,8 +113,9 @@ The app supports multiple Claude Code profiles (config dirs selected via `CLAUDE
 
 1. **Plugin hook** (`session-status`) fires on Claude Code lifecycle events and writes `.cstatus` JSON to `<profile>/projects/<encoded-path>/<session-id>.cstatus`
 2. **SessionDiscovery** scans each enabled profile's `projects/*/` for `.cstatus` files, parses JSON (session ID, PID, state, activity, cwd), validates PIDs with `kill(pid, 0)`
-3. **Source classification** walks the process tree via `proc_pidinfo`/`proc_pidpath` and reads environment variables via `sysctl KERN_PROCARGS2` to identify the host app
-4. **SessionMonitor** (`@Observable`) maintains the session list with three update mechanisms:
+3. **Session title** is read from the most recent `{"type":"ai-title"}` entry in the last 64 KB of the session transcript (`<session-id>.jsonl`, next to the `.cstatus` file). Rows show `displayName`: the `/name-session` name, else that title, else the project directory name
+4. **Source classification** walks the process tree via `proc_pidinfo`/`proc_pidpath` and reads environment variables via `sysctl KERN_PROCARGS2` to identify the host app
+5. **SessionMonitor** (`@Observable`) maintains the session list with three update mechanisms:
    - **Darwin notifications** (instant) — hook posts `com.poisonpenllc.Claude-Status.session-changed` via `notifyutil -p`
    - **File system watching** (fast) — `DispatchSource` on each enabled profile's `projects/` dir
    - **Polling timer** (5s fallback) — catches sessions without hooks (IDE agents)
