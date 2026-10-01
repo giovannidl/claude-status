@@ -207,12 +207,12 @@ struct SessionRowWidget: View {
                 .frame(width: 22, alignment: .center)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.sessionName ?? session.projectName)
+                Text(session.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
 
                 HStack(spacing: 3) {
-                    if session.sessionName != nil {
+                    if session.displayName != session.projectName {
                         Text(session.projectName)
                             .font(.system(size: 10))
                             .widgetForeground(.secondary, opacity: 0.8, isFullColor: isFullColor)

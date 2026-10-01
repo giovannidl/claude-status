@@ -28,7 +28,7 @@ struct SessionRowView: View {
                 .frame(width: 16, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.sessionName ?? session.projectName)
+                Text(session.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
 
@@ -42,7 +42,7 @@ struct SessionRowView: View {
                             .foregroundStyle(.secondary)
                             .clipShape(Capsule())
                     }
-                    if session.sessionName != nil {
+                    if session.displayName != session.projectName {
                         Text(session.projectName)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
