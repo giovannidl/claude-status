@@ -8,7 +8,7 @@ struct SessionFocuser {
     func focus(session: ClaudeSession) {
         switch session.source {
         case .terminal(let app):
-            focusTerminal(app: app, sessionId: session.iTermSessionId, tmuxPaneId: session.tmuxPaneId, tmuxSocket: session.tmuxSocket, workingDirectory: session.workingDirectory)
+            focusTerminal(app: app, sessionId: session.iTermSessionId, tmuxPaneId: session.tmuxPaneId, tmuxSocket: session.tmuxSocket, workingDirectory: session.workingDirectory, warpFocusURL: session.warpFocusURL)
         case .xcode:
             activateApp(bundleId: "com.apple.dt.Xcode")
         case .vscode:
@@ -57,7 +57,7 @@ struct SessionFocuser {
         "Ghostty": "com.mitchellh.ghostty",
     ]
 
-    private func focusTerminal(app: String, sessionId: String?, tmuxPaneId: String?, tmuxSocket: String?, workingDirectory: String) {
+    private func focusTerminal(app: String, sessionId: String?, tmuxPaneId: String?, tmuxSocket: String?, workingDirectory: String, warpFocusURL: URL?) {
         // tmux sessions: select the pane/window then activate the terminal
         if let paneId = tmuxPaneId {
             focusTmuxPane(paneId: paneId, socket: tmuxSocket)
@@ -83,6 +83,14 @@ struct SessionFocuser {
         // Ghostty supports focusing a specific terminal via AppleScript
         if app == "Ghostty" {
             focusGhosttyTerminal(workingDirectory: workingDirectory)
+            return
+        }
+
+        // Warp focuses the exact tab via its own deep link (WARP_FOCUS_URL);
+        // opening it also brings Warp to front. Older Warp versions don't set
+        // it, so fall through to plain activation.
+        if app == "Warp", let warpFocusURL {
+            NSWorkspace.shared.open(warpFocusURL)
             return
         }
 
