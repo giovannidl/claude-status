@@ -64,7 +64,7 @@ Claude Status/                         # Main app target
     SessionDiscovery.swift             # Scans each profile's projects/*/*.cstatus, validates PIDs, classifies source
     SessionMonitor.swift               # @Observable class: Darwin notifications + file watching + 5s polling
     StateResolver.swift                # DispatchSource file watchers (one per profile); JSONL timestamp fallback
-    ITermFocuser.swift                 # Focuses host app (AppleScript for iTerm2, process activation for others)
+    TerminalFocuser.swift              # Focuses host app (AppleScript for iTerm2/Ghostty, WARP_FOCUS_URL for Warp, process activation for others)
     ProductivityTracker.swift          # Time-in-state tracking, concurrency, score (persists to App Group)
     PluginDetector.swift               # Checks installed_plugins.json and settings.json for hook status
     PluginInstaller.swift              # Installs/uninstalls bundled plugin via `claude plugin` CLI
@@ -132,7 +132,7 @@ State is reported by the hook script in `.cstatus` files:
 
 ### Host App Recognition
 
-**Terminals** (via process tree): iTerm2 (session-specific AppleScript focusing), Terminal, Warp, Alacritty, Kitty, WezTerm, Ghostty
+**Terminals** (via process tree): iTerm2 (session-specific AppleScript focusing), Terminal, Warp (tab-specific focusing by opening the `WARP_FOCUS_URL` deep link Warp sets in each tab), Alacritty, Kitty, WezTerm, Ghostty
 
 **IDEs** (via process tree): Xcode, VS Code, JetBrains IDEs, Zed
 
