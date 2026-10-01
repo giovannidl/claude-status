@@ -120,6 +120,116 @@ struct SessionStateTests {
         #expect(decoded.sessionId == session.sessionId)
         #expect(decoded.state == session.state)
     }
+
+    private func makeSession(sessionName: String?, aiTitle: String?) -> ClaudeSession {
+        ClaudeSession(
+            sessionId: "12345678-1234-1234-1234-123456789abc",
+            pid: 12345,
+            workingDirectory: "/Users/test/Project",
+            projectName: "Project",
+            state: .active,
+            lastActivityAt: Date(),
+            iTermSessionId: nil,
+            tmuxPaneId: nil,
+            tmuxSocket: nil,
+            source: .terminal(app: "Terminal"),
+            activity: "",
+            sessionName: sessionName,
+            aiTitle: aiTitle
+        )
+    }
+
+    @Test func displayNamePrefersCustomName() {
+        let session = makeSession(sessionName: "API Refactor", aiTitle: "Fix login flow")
+        #expect(session.displayName == "API Refactor")
+    }
+
+    @Test func displayNameFallsBackToAITitle() {
+        let session = makeSession(sessionName: nil, aiTitle: "Fix login flow")
+        #expect(session.displayName == "Fix login flow")
+    }
+
+    @Test func displayNameFallsBackToProjectName() {
+        let session = makeSession(sessionName: nil, aiTitle: nil)
+        #expect(session.displayName == "Project")
+    }
+
+    @Test @MainActor func sessionCodableWithAITitle() throws {
+        let session = makeSession(sessionName: nil, aiTitle: "Fix login flow")
+
+        let encoded = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(ClaudeSession.self, from: encoded)
+
+        #expect(decoded.aiTitle == "Fix login flow")
+    }
+
+    @Test @MainActor func sessionDecodesWithoutAITitle() throws {
+        // Data written before session title support has no aiTitle key.
+        let encoded = try JSONEncoder().encode(makeSession(sessionName: nil, aiTitle: "Title"))
+        var json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json.removeValue(forKey: "aiTitle")
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(ClaudeSession.self, from: legacy)
+
+        #expect(decoded.aiTitle == nil)
+        #expect(decoded.displayName == "Project")
+    }
+}
+
+struct TranscriptTitleTests {
+
+    @Test func returnsLastAITitle() {
+        let tail = """
+        {"type":"ai-title","aiTitle":"First title","sessionId":"s"}
+        {"type":"user","message":{"content":"hi"}}
+        {"type":"ai-title","aiTitle":"Second title","sessionId":"s"}
+        {"type":"assistant","message":{"content":[]}}
+        """
+        #expect(SessionDiscovery.lastAITitle(inTranscriptTail: tail) == "Second title")
+    }
+
+    @Test func skipsTruncatedAndMalformedLines() {
+        // The first line is cut, as when the tail starts mid-entry.
+        let tail = """
+        Title","sessionId":"s"}
+        {"type":"ai-title","aiTitle":"Valid title","sessionId":"s"}
+        {"type":"ai-title","aiTitle":
+        """
+        #expect(SessionDiscovery.lastAITitle(inTranscriptTail: tail) == "Valid title")
+    }
+
+    @Test func ignoresEmptyTitlesAndOtherTypes() {
+        let tail = """
+        {"type":"user","message":{"content":"mentions ai-title in text"}}
+        {"type":"ai-title","aiTitle":"   ","sessionId":"s"}
+        """
+        #expect(SessionDiscovery.lastAITitle(inTranscriptTail: tail) == nil)
+    }
+
+    @Test func readsTitleFromTranscriptFile() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        // Pad the head beyond the scanned tail so only the last title is reachable.
+        let padding = String(repeating: "{\"type\":\"user\"}\n", count: 10_000)
+        let contents = "{\"type\":\"ai-title\",\"aiTitle\":\"Old title\"}\n" + padding
+            + "{\"type\":\"ai-title\",\"aiTitle\":\"Planificación de líneas\"}\n"
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+
+        #expect(SessionDiscovery.lastAITitle(inTranscriptAt: url) == "Planificación de líneas")
+    }
+
+    @Test func returnsNilForMissingOrEmptyTranscript() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jsonl")
+        #expect(SessionDiscovery.lastAITitle(inTranscriptAt: missing) == nil)
+
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: empty) }
+        try Data().write(to: empty)
+        #expect(SessionDiscovery.lastAITitle(inTranscriptAt: empty) == nil)
+    }
 }
 
 struct SessionDiscoveryTests {

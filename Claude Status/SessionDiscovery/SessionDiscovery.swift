@@ -25,6 +25,11 @@ struct SessionDiscovery {
     /// Keyed by session ID (UUID string from the .cstatus filename).
     var deadSessions: Set<String> = []
 
+    /// Last Claude Code title seen per session ID. Kept so a long turn that pushes
+    /// the title out of the scanned transcript tail doesn't revert the row to the
+    /// project directory name.
+    var aiTitles: [String: String] = [:]
+
     // MARK: - Discovery
 
     /// Result of a discovery pass: sessions plus their .cstatus file locations.
@@ -45,7 +50,7 @@ struct SessionDiscovery {
                     continue
                 }
                 guard isProcessAlive(record.pid) else {
-                    deadSessions.insert(record.sessionId)
+                    markDead(record.sessionId)
                     continue
                 }
                 sessions.append(assembleSession(from: record, profileName: profile.displayName))
@@ -66,11 +71,11 @@ struct SessionDiscovery {
                 continue
             }
             guard let record = parseCStatusFile(at: url) else {
-                deadSessions.insert(sessionId)
+                markDead(sessionId)
                 continue
             }
             guard isProcessAlive(record.pid) else {
-                deadSessions.insert(record.sessionId)
+                markDead(record.sessionId)
                 continue
             }
             sessions.append(assembleSession(from: record, profileName: profileName(for: url, in: profiles)))
@@ -88,6 +93,12 @@ struct SessionDiscovery {
     /// signals that a session may have come alive).
     mutating func clearDeadSessions() {
         deadSessions.removeAll()
+    }
+
+    /// Records a session as dead and drops its remembered title.
+    private mutating func markDead(_ sessionId: String) {
+        deadSessions.insert(sessionId)
+        aiTitles.removeValue(forKey: sessionId)
     }
 
     private static let iso8601Formatter: ISO8601DateFormatter = {
@@ -178,9 +189,15 @@ struct SessionDiscovery {
     // MARK: - Session Assembly
 
     /// Builds a `ClaudeSession` from a validated `CStatusRecord`.
-    private func assembleSession(from record: CStatusRecord, profileName: String?) -> ClaudeSession {
+    private mutating func assembleSession(from record: CStatusRecord, profileName: String?) -> ClaudeSession {
         let source = classifySource(pid: record.pid, ppid: record.ppid)
         let projectName = (record.cwd as NSString).lastPathComponent
+
+        // The transcript sits next to the .cstatus file: <session-id>.jsonl
+        let transcriptURL = record.fileURL.deletingPathExtension().appendingPathExtension("jsonl")
+        if let title = Self.lastAITitle(inTranscriptAt: transcriptURL) {
+            aiTitles[record.sessionId] = title
+        }
 
         let iTermSessionId: String?
         let tmuxPaneId: String?
@@ -222,8 +239,46 @@ struct SessionDiscovery {
             source: source,
             activity: record.activity,
             sessionName: record.sessionName,
-            profileName: profileName
+            profileName: profileName,
+            aiTitle: aiTitles[record.sessionId]
         )
+    }
+
+    // MARK: - Session Title
+
+    /// How much of the transcript tail is scanned for the session title. Claude Code
+    /// re-appends its `ai-title` entry on every turn, so the tail almost always has one.
+    private static let transcriptTailSize: UInt64 = 64 * 1024
+
+    /// Returns the most recent `ai-title` in the tail of a session transcript.
+    static func lastAITitle(inTranscriptAt url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        guard let fileSize = try? handle.seekToEnd() else { return nil }
+        let tailSize = min(fileSize, transcriptTailSize)
+        guard (try? handle.seek(toOffset: fileSize - tailSize)) != nil,
+              let data = try? handle.read(upToCount: Int(tailSize)) else {
+            return nil
+        }
+        // Lossy decoding: the tail may start in the middle of a multi-byte character.
+        return lastAITitle(inTranscriptTail: String(decoding: data, as: UTF8.self))
+    }
+
+    /// Returns the most recent non-empty `aiTitle` among the JSONL lines of `tail`.
+    /// Malformed or truncated lines are skipped.
+    static func lastAITitle(inTranscriptTail tail: String) -> String? {
+        for line in tail.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            guard line.contains("\"ai-title\""),
+                  let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  json["type"] as? String == "ai-title",
+                  let title = (json["aiTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty else {
+                continue
+            }
+            return title
+        }
+        return nil
     }
 
     // MARK: - Process Validation
